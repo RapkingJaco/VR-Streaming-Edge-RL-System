@@ -1,0 +1,47 @@
+{
+    "StreamingPPO": {
+        "checkpoints": [
+            {
+                "steps": 499881,
+                "file_path": "results\\Agent_20260223_update02\\StreamingPPO\\StreamingPPO-499881.onnx",
+                "reward": 9360.182947295052,
+                "creation_time": 1771862855.9875436,
+                "auxillary_file_paths": [
+                    "results\\Agent_20260223_update02\\StreamingPPO\\StreamingPPO-499881.pt"
+                ]
+            },
+            {
+                "steps": 999977,
+                "file_path": "results\\Agent_20260223_update02\\StreamingPPO\\StreamingPPO-999977.onnx",
+                "reward": null,
+                "creation_time": 1771864380.471061,
+                "auxillary_file_paths": [
+                    "results\\Agent_20260223_update02\\StreamingPPO\\StreamingPPO-999977.pt"
+                ]
+            },
+            {
+                "steps": 1120745,
+                "file_path": "results\\Agent_20260223_update02\\StreamingPPO\\StreamingPPO-1120745.onnx",
+                "reward": null,
+                "creation_time": 1771864740.2527206,
+                "auxillary_file_paths": [
+                    "results\\Agent_20260223_update02\\StreamingPPO\\StreamingPPO-1120745.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 1120745,
+            "file_path": "results\\Agent_20260223_update02\\StreamingPPO.onnx",
+            "reward": null,
+            "creation_time": 1771864740.2527206,
+            "auxillary_file_paths": [
+                "results\\Agent_20260223_update02\\StreamingPPO\\StreamingPPO-1120745.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.3.1+cu121"
+    }
+}

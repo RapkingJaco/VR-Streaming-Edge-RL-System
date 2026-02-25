@@ -1,0 +1,6 @@
+Phase,Model_Base,FPS_Mean_Base,FPS_Min_Base,MTP_Mean(ms)_Base,MTP_Max(ms)_Base,LoadRatio_Mean_Base,Model_AI,FPS_Mean_AI,FPS_Min_AI,MTP_Mean(ms)_AI,MTP_Max(ms)_AI,LoadRatio_Mean_AI
+P1,Baseline (Rule-based),40.2,29.2,79.8,91.2,0.288,V3 AI,55.6,45.2,74.7,87.6,0.168
+P2,Baseline (Rule-based),29.1,26.3,310.7,326.3,0.726,V3 AI,37.3,27.8,309.9,325.1,0.345
+P3,Baseline (Rule-based),25.7,16.7,145.0,268.0,0.269,V3 AI,19.9,17.6,156.7,276.0,0.33
+P4,Baseline (Rule-based),40.0,23.8,81.4,144.0,0.252,V3 AI,45.6,20.3,79.6,144.6,0.171
+Overall,Baseline (Rule-based),32.8,16.7,168.9,326.3,0.41,V3 AI,40.3,17.6,172.9,325.1,0.26

@@ -1,0 +1,65 @@
+{
+    "StreamingPPO": {
+        "checkpoints": [
+            {
+                "steps": 499959,
+                "file_path": "results\\TrainingHotFix01\\StreamingPPO\\StreamingPPO-499959.onnx",
+                "reward": 7539.800254821777,
+                "creation_time": 1771054802.6640286,
+                "auxillary_file_paths": [
+                    "results\\TrainingHotFix01\\StreamingPPO\\StreamingPPO-499959.pt"
+                ]
+            },
+            {
+                "steps": 999991,
+                "file_path": "results\\TrainingHotFix01\\StreamingPPO\\StreamingPPO-999991.onnx",
+                "reward": 15823.122383117676,
+                "creation_time": 1771055359.0515149,
+                "auxillary_file_paths": [
+                    "results\\TrainingHotFix01\\StreamingPPO\\StreamingPPO-999991.pt"
+                ]
+            },
+            {
+                "steps": 1499959,
+                "file_path": "results\\TrainingHotFix01\\StreamingPPO\\StreamingPPO-1499959.onnx",
+                "reward": 16807.8995552063,
+                "creation_time": 1771055913.136398,
+                "auxillary_file_paths": [
+                    "results\\TrainingHotFix01\\StreamingPPO\\StreamingPPO-1499959.pt"
+                ]
+            },
+            {
+                "steps": 1999991,
+                "file_path": "results\\TrainingHotFix01\\StreamingPPO\\StreamingPPO-1999991.onnx",
+                "reward": 17816.24981689453,
+                "creation_time": 1771056463.8264396,
+                "auxillary_file_paths": [
+                    "results\\TrainingHotFix01\\StreamingPPO\\StreamingPPO-1999991.pt"
+                ]
+            },
+            {
+                "steps": 2024055,
+                "file_path": "results\\TrainingHotFix01\\StreamingPPO\\StreamingPPO-2024055.onnx",
+                "reward": null,
+                "creation_time": 1771056485.9222815,
+                "auxillary_file_paths": [
+                    "results\\TrainingHotFix01\\StreamingPPO\\StreamingPPO-2024055.pt"
+                ]
+            }
+        ],
+        "final_checkpoint": {
+            "steps": 2024055,
+            "file_path": "results\\TrainingHotFix01\\StreamingPPO.onnx",
+            "reward": null,
+            "creation_time": 1771056485.9222815,
+            "auxillary_file_paths": [
+                "results\\TrainingHotFix01\\StreamingPPO\\StreamingPPO-2024055.pt"
+            ]
+        }
+    },
+    "metadata": {
+        "stats_format_version": "0.3.0",
+        "mlagents_version": "1.1.0",
+        "torch_version": "2.3.1+cu121"
+    }
+}
