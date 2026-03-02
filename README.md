@@ -1,4 +1,4 @@
-# MainScripts 技術文件
+# VR Streaming Edge RL 技術文件
 
 本文件說明 `Assets/MainScripts` 目錄中的核心腳本設計、資料流與可調參數，目標是讓你可以快速：
 
