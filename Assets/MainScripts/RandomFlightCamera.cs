@@ -5,7 +5,7 @@ public class RandomFlightCamera : MonoBehaviour
     public enum CameraState { LongTravel, LocalRoam }
 
     [Header("--- 飛行範圍 (相對於父物件中心) ---")]
-    // 這裡設定你的框框大小，X 和 Z 是長寬，Y 是高度
+    // 框框大小，X 和 Z 是長寬，Y 是高度
     public Vector3 flyZoneSize = new Vector3(80f, 20f, 80f);
 
     [Header("--- 探險參數 ---")]
@@ -18,7 +18,6 @@ public class RandomFlightCamera : MonoBehaviour
     public CameraState currentState;
     public string statusText;
 
-    // 這些是用來存 "相對位置" (相對於爸爸的距離)
     private Vector3 _targetLocalPos;
     private Quaternion _targetLocalRot;
     private float _roamTimer;
@@ -132,7 +131,6 @@ public class RandomFlightCamera : MonoBehaviour
         StartLongTravel();
     }
 
-    // 🔥 Gizmos 視覺化：讓你在 Scene 視窗清楚看到 15 個藍色框框
     void OnDrawGizmos()
     {
         Gizmos.color = new Color(0, 1, 1, 0.3f); // 半透明青色

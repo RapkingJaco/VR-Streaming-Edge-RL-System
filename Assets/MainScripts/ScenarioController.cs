@@ -72,7 +72,7 @@ public class ScenarioController : MonoBehaviour
         float loopTimer = (_localTimer + _timeOffset) % cycleDuration;
         currentTimer = loopTimer;
 
-        // 核心：在 Phase 4 結束（59.8s）最平穩時結算，防止飛掉
+        // 在 Phase 4 結束（59.8s）最平穩時結算，防止飛掉
         if (loopTimer > 59.8f && !_isEpisodeEnding)
         {
             _isEpisodeEnding = true;

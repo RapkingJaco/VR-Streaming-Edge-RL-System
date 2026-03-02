@@ -29,7 +29,7 @@ public class MonitorHUD : MonoBehaviour
     [Header("智慧錄製")]
     public bool enableRecording = true;
     public bool isTrainingMode = false;
-    public bool isBaselineMode = false; // 🌟 新增：手動勾選是否為 Baseline 測試
+    public bool isBaselineMode = false;
     public float deltaOverhead = 10.0f;
 
     private string baseDir = @"D:\JacobVRGameing";
@@ -55,7 +55,7 @@ public class MonitorHUD : MonoBehaviour
 
     void SetupAutoPath()
     {
-        // 🌟 根據模式切換資料夾與檔名首碼
+        // 根據模式切換資料夾與檔名首碼
         string subFolder = isTrainingMode ? "TrainingCSV" : (isBaselineMode ? "BaselineCSV" : "AIresultCSV");
         string prefix = isTrainingMode ? "Train_" : (isBaselineMode ? "Baseline_" : "Result_");
 
@@ -73,7 +73,6 @@ public class MonitorHUD : MonoBehaviour
             if (!Directory.Exists(folder)) Directory.CreateDirectory(folder);
 
             writer = new StreamWriter(currentFilePath, false, Encoding.UTF8);
-            // 標頭保持一致，方便 Python 統一處理
             writer.WriteLine("Timestamp(ms),Elapsed(s),Phase,FPS,RTT(ms),MTP(ms),Jitter(ms),Loss(%),LoadRatio,CPU_Load(ms),Reward_Inst,Reward_Cum");
             writer.Flush();
             Debug.Log($"[MonitorHUD] 開始錄製: {currentFilePath}");
@@ -119,7 +118,7 @@ public class MonitorHUD : MonoBehaviour
         float loss = qos.PacketLossRate * 100f;
         float loadR = loadController != null ? loadController.LocalLoadRatio : 1.0f;
 
-        // 🌟 確保 MTP 計算方式與 QoSStreamer 完全同步
+        // 確保 MTP 計算方式與 QoSStreamer 完全同步
         float mtp = qos.EstimatedMTP;
 
         string phase = scenarioController != null ? scenarioController.currentPhase : "None";
@@ -128,7 +127,7 @@ public class MonitorHUD : MonoBehaviour
         float currentCumReward = 0f;
         float instantReward = 0f;
 
-        // 🌟 如果是 Baseline 模式，獎勵欄位填 0
+        // 如果是 Baseline 模式，獎勵欄位填 0
         if (!isBaselineMode && agent != null)
         {
             currentCumReward = agent.GetCumulativeReward();
@@ -161,7 +160,7 @@ public class MonitorHUD : MonoBehaviour
         string mtpColor = mtp < 50 ? "#00FF00" : (mtp > 100 ? "#FF0000" : "#FFFF00");
         string lossColor = loss < 1.0f ? "#FFFFFF" : "#FF0000";
 
-        // 🌟 顯示當前運作模式
+        // 顯示當前運作模式
         string modeStr = isBaselineMode ? "<color=#FF8800>BASELINE (Rule-Based)</color>" : "<color=#00FFFF>AI INFERENCE (RL Agent)</color>";
 
         label.text =

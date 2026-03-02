@@ -40,7 +40,7 @@ public class RuleBasedController : MonoBehaviour
     {
         if (qos == null || load == null) return;
 
-        // --- 1. 綜合網路健康度 (0=爛, 1=好) ---
+        //  綜合網路健康度 (0=爛, 1=好) 
         float rttScore = Mathf.InverseLerp(rttBad, rttGood, qos.SmoothedRTT);
         float jitterScore = Mathf.InverseLerp(jitterBad, jitterGood, qos.JitterMs);
         float lossScore = Mathf.InverseLerp(lossBad, lossGood, qos.PacketLossRate);
@@ -49,11 +49,11 @@ public class RuleBasedController : MonoBehaviour
         float totalWeight = wRTT + wJitter + wLoss;
         if (totalWeight > 0) netHealth /= totalWeight;
 
-        // --- 2. 壓力評估 ---
+        // 壓力評估 
         float localStress = Mathf.InverseLerp(targetFPS, minFPS, qos.SmoothedFPS);
         float networkPenalty = 1.0f - netHealth;
 
-        // --- 3. 決策核心：階層式優先級邏輯 (Priority Logic) ---
+        //  決策核心：階層式優先級邏輯
         float targetRatio;
 
         // 優先權 1：本地設備過熱 (FPS 下降嚴重)，強制卸載
@@ -74,7 +74,7 @@ public class RuleBasedController : MonoBehaviour
             targetRatio = 0.35f;
         }
 
-        // --- 4. 穩定化與執行 ---
+        //  穩定化與執行 
         if (Time.time - _lastApplyTime < switchCooldown) return;
         if (Mathf.Abs(targetRatio - _prevRatio) < deadBand) return;
 
