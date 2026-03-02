@@ -71,7 +71,13 @@ public class QoSStreamer : MonoBehaviour
 
         JitterMs = Mathf.PerlinNoise(Time.time * 5.0f, noiseSeed) * jitterScale;
 
-        float targetRtt = baseRtt + (offloadIntensity * offloadBandwidthCost) + JitterMs + ExternalLatencySpike;
+        // [V4 優化] 溫和的動態頻寬擠壓效應
+        // 邏輯：每增加 100ms 的外部延遲，卸載的頻寬代價就增加 1 倍
+        float congestionMultiplier = 1.0f + (ExternalLatencySpike / 100f);
+
+        // 當 P2 來襲 (例如 Spike=150ms)，Multiplier 會是 2.5 倍。
+        // 原本 5G 的卸載代價 5ms，會變成 12.5ms。這會讓 AI 感覺到「有點痛」，但不到「痛不欲生」。
+        float targetRtt = baseRtt + (offloadIntensity * offloadBandwidthCost * congestionMultiplier) + JitterMs + ExternalLatencySpike;
 
         currentRtt = Mathf.Lerp(currentRtt, targetRtt, 0.2f);
         SmoothedRTT = currentRtt;
