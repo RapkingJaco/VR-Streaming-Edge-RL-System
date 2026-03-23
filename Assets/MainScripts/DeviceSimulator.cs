@@ -4,9 +4,16 @@ using System.Diagnostics;
 public class DeviceSimulator : MonoBehaviour
 {
     public LoadController loadController;
-    public int baseLocalLag = 25;
+
+    [Header("Simulation Settings")]
+    public float baseLocalLag = 25f;   // ⭐ int → float，配合 ScenarioController v2 的 SmoothDamp 寫入
+
+    [Header("Training")]
     public bool isTrainingMode = true;
+
+    [Header("Debug Info")]
     public float currentSimulatedLoadMs;
+
     private Stopwatch _sw = new Stopwatch();
 
     void Update()
@@ -14,19 +21,18 @@ public class DeviceSimulator : MonoBehaviour
         if (loadController == null) return;
 
         float ratio = loadController.LocalLoadRatio;
-        // 只有 LoadRatio > 0.05 才有負載
-        currentSimulatedLoadMs = (ratio > 0.05f) ? (baseLocalLag * ratio) + Random.Range(0, 5) : 0;
+        float jitter = UnityEngine.Random.Range(0f, 5f * ratio);
+        currentSimulatedLoadMs = 2f + (baseLocalLag * ratio) + jitter;
 
         if (!isTrainingMode && currentSimulatedLoadMs >= 1.0f)
-        {
             BurnCpu((int)currentSimulatedLoadMs);
-        }
     }
 
     void BurnCpu(int ms)
     {
+        int safeMs = Mathf.Min(ms, 200);
         _sw.Restart();
-        while (_sw.ElapsedMilliseconds < ms) { }
+        while (_sw.ElapsedMilliseconds < safeMs) { }
         _sw.Stop();
     }
 }

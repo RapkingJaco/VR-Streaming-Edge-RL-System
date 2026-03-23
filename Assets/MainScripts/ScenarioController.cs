@@ -1,171 +1,195 @@
 ﻿using UnityEngine;
-using System.Collections;
-using Unity.MLAgents;
 
-public enum ScenarioMode { StandardLoop, RandomChaos }
+public enum ScenarioMode
+{
+    StandardLoop,
+    RandomChaos
+}
 
 public class ScenarioController : MonoBehaviour
 {
     [Header("References")]
     public DeviceSimulator deviceSim;
     public QoSStreamer qos;
-    [Tooltip("請將 Agent 拖入此處，或保持 Null 由程式自動尋找")]
     public StreamingAgent agent;
 
     [Header("Mode Settings")]
     public ScenarioMode mode = ScenarioMode.StandardLoop;
-    public bool randomizeStartTime = true;
 
-    [Header("Debug Info")]
+    [Header("Transition Smoothing")]
+    [Tooltip("參數平滑過渡速度(秒)。建議 1~3")]
+    public float smoothTime = 1.5f;
+
+    [Header("Debug Info (Read Only)")]
     public float currentTimer;
     public string currentPhase;
 
-    private float cycleDuration = 60.0f;
-    private float _timeOffset = 0f;
-    private float _localTimer = 0f;
-    private int _lastPhaseIndex = -1;
-    private bool _isEpisodeEnding = false; // 旗標：確保重置只觸發一次
+    // ── 目標值 ──
+    private float _targetLocalLag = 5f;
+    private float _targetRTT = 3f;
+    private float _targetLoss = 0f;
 
-    // 隨機模式變數
-    private float _nextEventTime = 0f;
-    private int _eventCount = 0;
+    // ── 當前平滑值 ──
+    private float _smoothedLocalLag;
+    private float _smoothedRTT;
+    private float _smoothedLoss;
+
+    // ── SmoothDamp 暫存 ──
+    private float _velLocalLag;
+    private float _velRTT;
+    private float _velLoss;
+
+    // ── 場景狀態 ──
+    private float _localTimer = 0f;
+    private float _cycleDuration = 60f;
+    private bool _isFirstReset = true;
+
+    // ── Spike 狀態 ──
+    private bool _isSpiking = false;
+    private float _spikeEndTime = 0f;
+    private float _spikeCooldown = 0f;
+    private float _nextChaosChange = 0f;
+
+    private const float MAX_SPIKE_LATENCY = 80f;
+    private const float MIN_SPIKE_COOLDOWN = 5f;
 
     void Start()
     {
-        if (qos == null) qos = GetComponent<QoSStreamer>();
-        if (deviceSim == null) deviceSim = GetComponent<DeviceSimulator>();
-        if (agent == null) agent = GetComponentInChildren<StreamingAgent>();
         ResetScenario();
+        _smoothedLocalLag = _targetLocalLag;
+        _smoothedRTT = _targetRTT;
+        _smoothedLoss = _targetLoss;
     }
 
     public void ResetScenario()
     {
-        _localTimer = 0f;
-        _nextEventTime = 0f;
-        _lastPhaseIndex = -1;
-        _eventCount = 0;
-        _isEpisodeEnding = false;
+        _localTimer = (_isFirstReset && mode == ScenarioMode.RandomChaos) ? Random.Range(0f, _cycleDuration) : 0f;
+        _isFirstReset = false;
 
-        if (qos != null) qos.ResetNetwork();
+        _nextChaosChange = 0f;
+        _isSpiking = false;
+        _spikeCooldown = 0f;
 
-        if (randomizeStartTime && mode == ScenarioMode.StandardLoop)
-            _timeOffset = Random.Range(0f, cycleDuration);
-        else
-            _timeOffset = 0f;
+        if (qos != null)
+        {
+            qos.ExternalLatencySpike = 0f;
+            qos.ResetNetwork();
+        }
 
-        if (mode == ScenarioMode.RandomChaos) PickRandomEvent();
-
-        Debug.Log($"<color=cyan>[Scenario] 系統已重置。模式: {mode}, Offset: {_timeOffset:F1}</color>");
+        // 初始化為天堂狀態
+        SetEnvTarget(5f, 3f, 0f);
     }
 
     void Update()
     {
-        if (deviceSim == null || qos == null) return;
-        _localTimer += Time.deltaTime;
+        if (deviceSim == null || qos == null || agent == null) return;
 
+        _localTimer += Time.deltaTime;
+        _spikeCooldown -= Time.deltaTime;
+        currentTimer = _localTimer;
+
+        // 局數重置
+        if (_localTimer >= _cycleDuration)
+        {
+            Debug.Log($"Episode結束！Timer={_localTimer:F1} RealTime={Time.realtimeSinceStartup:F1}");
+            agent.EndEpisode();
+            ResetScenario();
+            return;
+        }
+
+        // 模式切換
         if (mode == ScenarioMode.StandardLoop) UpdateStandardLoop();
         else UpdateRandomChaos();
+
+        // 平滑漸變運算
+        _smoothedLocalLag = Mathf.SmoothDamp(_smoothedLocalLag, _targetLocalLag, ref _velLocalLag, smoothTime);
+        _smoothedRTT = Mathf.SmoothDamp(_smoothedRTT, _targetRTT, ref _velRTT, smoothTime);
+        _smoothedLoss = Mathf.SmoothDamp(_smoothedLoss, _targetLoss, ref _velLoss, smoothTime * 0.5f);
+
+        // 寫入底層模擬器
+        deviceSim.baseLocalLag = _smoothedLocalLag;
+        qos.baseRtt = _smoothedRTT;
+        qos.simulatedLossRate = _smoothedLoss;
     }
 
     void UpdateStandardLoop()
     {
-        float loopTimer = (_localTimer + _timeOffset) % cycleDuration;
-        currentTimer = loopTimer;
-
-        // 在 Phase 4 結束（59.8s）最平穩時結算，防止飛掉
-        if (loopTimer > 59.8f && !_isEpisodeEnding)
+        // P1 天堂：低壓環境，AI 應專注衝高 FPS
+        if (_localTimer < 10f)
         {
-            _isEpisodeEnding = true;
-            if (agent != null) agent.EndEpisode();
+            currentPhase = "P1: 天堂";
+            SetEnvTarget(5f, 3f, 0f);
         }
-
-        if (loopTimer < 1.0f) _isEpisodeEnding = false;
-
-        int currentPhaseIndex = 0;
-        if (loopTimer < 10f)
+        // P2 網路壓力：高 RTT，AI 應保守卸載
+        else if (_localTimer < 25f)
         {
-            currentPhaseIndex = 1; currentPhase = "P1: 起始平穩";
-            if (_lastPhaseIndex != 1) SetEnvironment(30, 20f, 0f);
+            currentPhase = "P2: 網路壓力";
+            SetEnvTarget(8f, 60f, 0.015f);
         }
-        else if (loopTimer < 30f)
+        // P3 設備壓力：極端卡頓 (120ms)，逼迫 AI 突破底線大量卸載
+        else if (_localTimer < 45f)
         {
-            currentPhaseIndex = 2; currentPhase = "P2: 網路風暴";
-            if (_lastPhaseIndex != 2) SetEnvironment(30, 250f, 0.02f);
+            currentPhase = "P3: 設備壓力";
+            SetEnvTarget(120f, 5f, 0f);
         }
-        else if (loopTimer < 50f)
+        // P4 雙重壓力：網路與設備皆差，考驗動態平衡
+        else if (_localTimer < 55f)
         {
-            currentPhaseIndex = 3; currentPhase = "P3: 本地過熱";
-            if (_lastPhaseIndex != 3) SetEnvironment(100, 70f, 0.02f);
+            currentPhase = "P4: 雙重壓力";
+            SetEnvTarget(60f, 50f, 0.02f);
         }
+        // P5 恢復期
         else
         {
-            currentPhaseIndex = 4; currentPhase = "P4: 恢復平靜";
-            if (_lastPhaseIndex != 4) SetEnvironment(30, 20f, 0f);
+            currentPhase = "P5: 恢復";
+            SetEnvTarget(5f, 3f, 0f);
         }
-        _lastPhaseIndex = currentPhaseIndex;
     }
 
     void UpdateRandomChaos()
     {
-        currentTimer = _localTimer;
-        if (_localTimer >= _nextEventTime && !_isEpisodeEnding)
+        // 處理突發 Spike
+        if (_isSpiking)
         {
-            _eventCount++;
-            // 經歷 6~10 個隨機事件後主動結算
-            if (_eventCount > Random.Range(6, 11))
+            currentPhase = "[SPIKE] 突發網路波動";
+            if (Time.time >= _spikeEndTime)
             {
-                _isEpisodeEnding = true;
-                if (agent != null) agent.EndEpisode();
-                return;
+                _isSpiking = false;
+                _spikeCooldown = MIN_SPIKE_COOLDOWN;
+                qos.ExternalLatencySpike = 0f;
             }
-            PickRandomEvent();
+            return;
+        }
+
+        // 定期隨機切換環境
+        if (_localTimer >= _nextChaosChange)
+        {
+            if (Random.value < 0.2f && _spikeCooldown <= 0f)
+            {
+                _isSpiking = true;
+                _spikeEndTime = Time.time + Random.Range(1f, 3f);
+
+                SetEnvTarget(Random.Range(5f, 30f), MAX_SPIKE_LATENCY, 0.03f);
+                qos.ExternalLatencySpike = Random.Range(30f, MAX_SPIKE_LATENCY);
+                currentPhase = "[SPIKE] 觸發！";
+            }
+            else
+            {
+                // 亂數生成挑戰環境
+                float randLocal = Random.Range(5f, 100f);
+                float randRTT = Random.Range(2f, 60f);
+                float randLoss = Random.Range(0f, 0.02f);
+                SetEnvTarget(randLocal, randRTT, randLoss);
+                currentPhase = $"Chaos: local={randLocal:F0}ms rtt={randRTT:F0}ms";
+            }
+            _nextChaosChange = _localTimer + Random.Range(3f, 6f);
         }
     }
 
-    void PickRandomEvent()
+    void SetEnvTarget(float localLag, float rtt, float loss)
     {
-        float dice = Random.value;
-        float duration = 0f;
-        SetEnvironment(30, 20f, 0f);
-
-        if (dice < 0.4f)
-        {
-            currentPhase = "訓練: 平穩期";
-            duration = Random.Range(5f, 10f);
-            SetEnvironment(30, 20f, 0f);
-        }
-        else if (dice < 0.7f)
-        {
-            currentPhase = "訓練: 網路風暴";
-            duration = Random.Range(5f, 15f);
-            SetEnvironment(30, Random.Range(150f, 300f), Random.Range(0.01f, 0.05f));
-        }
-        else
-        {
-            currentPhase = "訓練: 隨機尖刺";
-            duration = Random.Range(3f, 6f);
-            SetEnvironment(30, 20f, 0f);
-            StartCoroutine(TriggerSpike());
-        }
-        _nextEventTime = _localTimer + duration;
-    }
-
-    void SetEnvironment(int localLag, float netRTT, float netLoss)
-    {
-        if (deviceSim != null) deviceSim.baseLocalLag = localLag;
-        if (qos != null)
-        {
-            qos.baseRtt = netRTT;
-            qos.simulatedLossRate = netLoss;
-        }
-    }
-
-    IEnumerator TriggerSpike()
-    {
-        yield return new WaitForSeconds(Random.Range(0.5f, 1.5f));
-        if (qos != null) qos.ExternalLatencySpike = 300f;
-        currentPhase = "!! 突發尖刺 !!";
-        yield return new WaitForSeconds(0.6f);
-        if (qos != null) qos.ExternalLatencySpike = 0f;
+        _targetLocalLag = localLag;
+        _targetRTT = rtt;
+        _targetLoss = loss;
     }
 }

@@ -1,87 +1,89 @@
 ﻿using UnityEngine;
 
+/// <summary>
+/// RuleBasedController v2
+///
+/// 相較舊版的改進：
+///   1. 納入 MTP 直接決策（對齊論文核心指標）
+///   2. targetFPS 對齊 AI（120fps）
+///   3. 預設偏邊緣（0.2），對齊新環境設計
+///   4. 移除硬跳切換，改用連續加權公式
+///   5. 直接讀 deviceSim.baseLocalLag 感知設備壓力
+/// </summary>
 public class RuleBasedController : MonoBehaviour
 {
     [Header("References")]
     public QoSStreamer qos;
     public LoadController load;
+    public DeviceSimulator deviceSim;
 
-    [Header("Network Weights (加權平衡)")]
-    [Range(0f, 1f)] public float wRTT = 0.5f;
-    [Range(0f, 1f)] public float wJitter = 0.3f;
-    [Range(0f, 1f)] public float wLoss = 0.2f;
+    [Header("Thresholds")]
+    public float rttGood = 10f;    // RTT 低於此值：網路良好
+    public float rttBad = 80f;    // RTT 高於此值：網路惡劣
+    public float lagGood = 10f;    // localLag 低於此值：設備輕鬆
+    public float lagBad = 80f;    // localLag 高於此值：設備過載
+    public float mtpTarget = 35f;    // MTP 目標上限
+    public float fpsFloor = 30f;    // FPS 低於此值視為過載
+    public float fpsTarget = 120f;   // 對齊 AI 目標
 
-    [Header("Network Thresholds (與 AI 指標對齊)")]
-    public float rttBad = 200f;     // RTT 臨界點 (對抗 P2)
-    public float rttGood = 40f;
-    public float jitterBad = 30f;
-    public float jitterGood = 5f;
-    public float lossBad = 0.05f;
-    public float lossGood = 0f;
+    [Header("Stabilization")]
+    public float smoothSpeed = 3f;   // 比 AI 慢一點，模擬工程師設計的保守策略
+    public float switchCooldown = 0.3f;
 
-    [Header("Local Performance")]
-    public float targetFPS = 60f;
-    public float minFPS = 20f;      // 與 AI 懲罰區間對齊 (對抗 P3)
-
-    [Header("Stabilization (控制穩定度)")]
-    [Range(0f, 1f)] public float hysteresis = 0.6f; // 降低滯後感
-    public float deadBand = 0.03f;
-    public float switchCooldown = 0.2f;
-
+    private float _currentRatio = 0.2f;
     private float _lastApplyTime;
-    private float _prevRatio = 1.0f;
 
     void Start()
     {
-        if (load != null) load.SetLoadRatio(_prevRatio);
+        if (load != null) load.SetLoadRatio(_currentRatio);
     }
 
     void Update()
     {
         if (qos == null || load == null) return;
-
-        //  綜合網路健康度 (0=爛, 1=好) 
-        float rttScore = Mathf.InverseLerp(rttBad, rttGood, qos.SmoothedRTT);
-        float jitterScore = Mathf.InverseLerp(jitterBad, jitterGood, qos.JitterMs);
-        float lossScore = Mathf.InverseLerp(lossBad, lossGood, qos.PacketLossRate);
-        float netHealth = (rttScore * wRTT) + (jitterScore * wJitter) + (lossScore * wLoss);
-
-        float totalWeight = wRTT + wJitter + wLoss;
-        if (totalWeight > 0) netHealth /= totalWeight;
-
-        // 壓力評估 
-        float localStress = Mathf.InverseLerp(targetFPS, minFPS, qos.SmoothedFPS);
-        float networkPenalty = 1.0f - netHealth;
-
-        //  決策核心：階層式優先級邏輯
-        float targetRatio;
-
-        // 優先權 1：本地設備過熱 (FPS 下降嚴重)，強制卸載
-        if (localStress > 0.5f)
-        {
-            // 盡量卸載至 0.15，但若網路極差則受 networkPenalty 牽制
-            targetRatio = Mathf.Max(0.15f, networkPenalty);
-        }
-        // 優先權 2：網路環境極度惡劣，為了防暈眩強制回本機
-        else if (networkPenalty > 0.7f)
-        {
-            targetRatio = 1.0f;
-        }
-        // 優先權 3：一般狀態 (網路與設備皆健康)
-        else
-        {
-            // 維持在基礎負載，不過度消耗本地算力
-            targetRatio = 0.35f;
-        }
-
-        //  穩定化與執行 
         if (Time.time - _lastApplyTime < switchCooldown) return;
-        if (Mathf.Abs(targetRatio - _prevRatio) < deadBand) return;
 
-        float smoothedRatio = Mathf.Lerp(_prevRatio, targetRatio, 1f - hysteresis);
+        float rtt = qos.SmoothedRTT;
+        float mtp = qos.EstimatedMTP;
+        float fps = qos.SmoothedFPS;
+        float lag = deviceSim != null ? deviceSim.currentSimulatedLoadMs : 0f;
 
-        load.SetLoadRatio(smoothedRatio);
-        _prevRatio = smoothedRatio;
+        // ── 1. 網路壓力因子 [0, 1]：越高代表網路越差，越不宜卸載 ──
+        float networkStress = Mathf.Clamp01((rtt - rttGood) / (rttBad - rttGood));
+
+        // ── 2. 設備壓力因子 [0, 1]：越高代表設備越卡，越需要卸載 ──
+        float deviceStress = Mathf.Clamp01((lag - lagGood) / (lagBad - lagGood));
+
+        // ── 3. FPS 壓力因子 [0, 1] ───────────────────────────────
+        float fpsStress = Mathf.Clamp01((fpsTarget - fps) / (fpsTarget - fpsFloor));
+
+        // ── 4. MTP 修正因子：MTP 超標時主動調整比率 ──────────────
+        // MTP 超標代表目前策略不對，往理想方向推一步
+        float mtpOverflow = Mathf.Clamp01((mtp - mtpTarget) / mtpTarget);
+
+        // ── 5. 核心決策：加權計算理想比率 ───────────────────────
+        //
+        // 基礎邏輯：
+        //   - 預設偏邊緣（0.2）
+        //   - 網路差 → 拉回本機（+networkStress）
+        //   - 設備卡 → 推向邊緣（-deviceStress）
+        //   - MTP 超標 → 往設備壓力方向修正
+        //
+        float targetRatio = 0.2f
+            + networkStress * 0.6f       // 網路差最多推到 0.80
+            - deviceStress * 0.15f      // 設備卡最多再降 0.15
+            + mtpOverflow * (networkStress - deviceStress) * 0.1f; // MTP 修正
+
+        targetRatio = Mathf.Clamp(targetRatio, 0.1f, 0.95f);
+
+        // ── 6. 平滑執行 ───────────────────────────────────────────
+        _currentRatio = Mathf.Lerp(
+            _currentRatio,
+            targetRatio,
+            1f - Mathf.Exp(-smoothSpeed * Time.deltaTime)
+        );
+
+        load.SetLoadRatio(_currentRatio);
         _lastApplyTime = Time.time;
     }
 }
