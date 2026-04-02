@@ -17,8 +17,8 @@ public class WebRTCStatsBridge : MonoBehaviour
     public QoSStreamerReal qosStreamer;
 
     [Header("Network Settings")]
-    [Tooltip("觀看瀏覽器端的 IP（同一台電腦填 127.0.0.1）")]
-    public string browserIP = "127.0.0.1";
+    [Tooltip("觀看瀏覽器端的 IP（同一台電腦填 192.168.100.3）")]
+    public string browserIP = "192.168.100.3";
 
     [Tooltip("數據更新間隔（秒），建議 0.5")]
     public float updateInterval = 0.5f;

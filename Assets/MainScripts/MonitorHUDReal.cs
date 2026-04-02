@@ -59,10 +59,17 @@ public class MonitorHUDReal : MonoBehaviour
     {
         // 自動抓取同物件上的組件
         if (qos == null) qos = FindFirstObjectByType<QoSStreamerReal>();
-        if (loadController == null) loadController = FindFirstObjectByType<LoadController>();
+        if (loadController == null) loadController = FindFirstObjectByType<LoadController>();               
 
         currentTime = 0f;
         isRunning = true;
+
+        // ── 核心修正：自動判斷平台路徑 ──
+        if (Application.platform == RuntimePlatform.Android)
+        {
+            // 在頭盔裡，儲存在應用程式的私有空間
+            saveFolder = Application.persistentDataPath + "/VRTestResults";
+        }
 
         if (enableRecording)
         {
