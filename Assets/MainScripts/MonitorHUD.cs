@@ -54,10 +54,10 @@ public class MonitorHUD : MonoBehaviour
         if (agent == null) agent = GetComponentInParent<StreamingAgent>();
         if (scenarioController == null) scenarioController = GetComponentInParent<ScenarioController>();
         if (deviceSim == null) deviceSim = GetComponentInParent<DeviceSimulator>();
-        if (agent == null && transform.parent != null)
-            agent = transform.parent.GetComponentInChildren<StreamingAgent>();
 
+        // 確保在 Start 時重置狀態
         currentTime = 0f;
+        isRunning = true;
 
         if (isTrainingMode)
         {
@@ -70,6 +70,7 @@ public class MonitorHUD : MonoBehaviour
         }
     }
 
+    // ── 補回缺失的自動路徑設定 ────────────────────────────────
     void SetupAutoPath()
     {
         string subFolder = isBaselineMode ? "BaselineCSV" : "AIresultCSV";
@@ -78,6 +79,7 @@ public class MonitorHUD : MonoBehaviour
         currentFilePath = Path.Combine(baseDir, subFolder, fileName);
     }
 
+    // ── 補回缺失的 CSV 初始化 ──────────────────────────────────
     void InitializeCSV()
     {
         try
@@ -88,19 +90,21 @@ public class MonitorHUD : MonoBehaviour
             writer.WriteLine("Timestamp(ms),Elapsed(s),Phase,FPS,RTT(ms),MTP(ms),Jitter(ms),Loss(%),LoadRatio,CPU_Load(ms),Reward_Inst,Reward_Cum");
             writer.Flush();
         }
-        catch { enableRecording = false; }
+        catch (Exception e)
+        {
+            Debug.LogError($"CSV 初始化失敗: {e.Message}");
+            enableRecording = false;
+        }
     }
 
     void Update()
     {
         if (qos == null || !isRunning) return;
 
-        if (scenarioController != null)
-            currentTime = scenarioController.currentTimer;
-        else
-            currentTime += Time.deltaTime;
+        // 使用獨立計時器，避免受到外部控制器時間殘留的影響
+        currentTime += Time.deltaTime;
 
-        // ── 統計資料更新 ─────────────────────────────────────
+        // 統計資料更新
         float fps = qos.SmoothedFPS;
         float mtp = qos.EstimatedMTP;
         _fpsSum += fps; _mtpSum += mtp; _sampleCount++;
@@ -111,6 +115,7 @@ public class MonitorHUD : MonoBehaviour
         if (mtp < 35f) _mtpUnder35++;
         if (mtp < 20f) _mtpUnder20++;
 
+        // 資料錄製邏輯
         if (enableRecording && writer != null)
         {
             if (Time.unscaledTime - lastRecordTime >= recordInterval)
@@ -120,10 +125,14 @@ public class MonitorHUD : MonoBehaviour
             }
         }
 
+        // 到達設定的實驗時間就停止錄製
         if (currentTime >= maxTime)
         {
-            if (isTrainingMode) { }
-            else { isRunning = false; StopExperiment(); }
+            if (!isTrainingMode)
+            {
+                isRunning = false;
+                StopExperiment();
+            }
         }
 
         UpdateUI();
@@ -160,20 +169,17 @@ public class MonitorHUD : MonoBehaviour
         float localLag = deviceSim != null ? deviceSim.currentSimulatedLoadMs : 0f;
         string phase = scenarioController != null ? scenarioController.currentPhase : "N/A";
 
-        // idealRatio（和 StreamingAgent V7 一致）
         float networkBadFactor = Mathf.Clamp01((rtt - 5f) / 95f);
         float idealRatio = 0.20f + networkBadFactor * 0.65f;
 
         float cumReward = agent != null ? agent.GetCumulativeReward() : 0f;
         float instReward = agent != null ? agent.LastStepReward : 0f;
 
-        // 平均值
         float avgFPS = _sampleCount > 0 ? _fpsSum / _sampleCount : 0f;
         float avgMTP = _sampleCount > 0 ? _mtpSum / _sampleCount : 0f;
         float pct35 = _sampleCount > 0 ? _mtpUnder35 * 100f / _sampleCount : 0f;
         float pct20 = _sampleCount > 0 ? _mtpUnder20 * 100f / _sampleCount : 0f;
 
-        // ── 顏色 helpers ──────────────────────────────────────
         string C(float v, float good, float bad, bool lowerBetter = false)
         {
             bool isGood = lowerBetter ? v <= good : v >= good;
@@ -181,7 +187,6 @@ public class MonitorHUD : MonoBehaviour
             return isGood ? "#00FF00" : (isBad ? "#FF0000" : "#FFFF00");
         }
 
-        // Phase 特效
         if (phase.Contains("SPIKE"))
             phase = $"<color=#FF0000><size=120%><b>{phase}</b></size></color>";
 
@@ -193,43 +198,29 @@ public class MonitorHUD : MonoBehaviour
             $"<size=115%><b>═══ 實驗監控面板 ═══</b></size>\n" +
             $"{modeStr}   ID:{gameObject.GetInstanceID()}\n" +
             $"<color=#888888>────────────────────</color>\n" +
-
-            // 階段 & 時間
             $"<b>階段:</b> {phase}\n" +
             $"<b>時間:</b> {currentTime:00.0} / {maxTime:00} s\n" +
             $"<color=#888888>────────────────────</color>\n" +
-
-            // 畫面品質
             $"<b>【畫面品質】</b>\n" +
             $"FPS    : <color={C(fps, 72, 30)}><b>{fps:00.0}</b></color>   " +
             $"avg <color={C(avgFPS, 72, 30)}>{avgFPS:00.0}</color>  " +
             $"min <color=#FF8800>{_fpsMin:00.0}</color>\n" +
-
-            // 延遲
             $"<b>【延遲】</b>\n" +
             $"MTP    : <color={C(mtp, 35, 80, true)}><b>{mtp:000.0} ms</b></color>   " +
             $"avg <color={C(avgMTP, 35, 80, true)}>{avgMTP:000.0}</color>  " +
             $"max <color=#FF8800>{_mtpMax:000.0}</color>\n" +
             $"<35ms : <color={C(pct35, 70, 40)}>{pct35:00.0}%</color>   " +
             $"<20ms : <color={C(pct20, 50, 20)}>{pct20:00.0}%</color>\n" +
-
-            // 網路
             $"<b>【網路】</b>\n" +
             $"RTT    : <color={C(rtt, 10, 80, true)}>{rtt:000.0} ms</color>   " +
             $"Jitter : {jitter:0.0} ms\n" +
             $"Loss   : <color={C(loss, 0, 2, true)}>{loss:0.00}%</color>\n" +
-
-            // 設備
             $"<b>【設備】</b>\n" +
             $"LocalLag : <color={C(localLag, 20, 80, true)}>{localLag:000.0} ms</color>\n" +
-
-            // 負載分配
             $"<color=#888888>────────────────────</color>\n" +
             $"<b>【負載分配】</b>\n" +
             $"本機 : <b>{loadRatio * 100:00.0}%</b>  邊緣 : <b>{(1 - loadRatio) * 100:00.0}%</b>\n" +
             $"Ideal: <color=#00CCFF>{idealRatio * 100:00.0}%</color> 本機\n" +
-
-            // 獎勵
             $"<color=#888888>────────────────────</color>\n" +
             $"<color=#FFD700><b>即時獎勵 : {instReward:+0.000;-0.000}</b></color>\n" +
             $"<color=#FFD700><b>累積獎勵 : {cumReward:F2}</b></color>";

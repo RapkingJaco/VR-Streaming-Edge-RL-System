@@ -35,6 +35,9 @@ public class QoSStreamerReal : MonoBehaviour
     public float JitterMs { get; private set; }
     public float PacketLossRate { get; private set; }
 
+    // Agent 能讀取實機的運算延遲
+    public float RealLocalLagMs => _realLocalLagMs;
+
     // ── Inspector 設定 ────────────────────────────────────────
     [Header("Network Specs")]
     public float decodeDelay = 2f;
@@ -104,6 +107,9 @@ public class QoSStreamerReal : MonoBehaviour
 
         // 5. LocalLag：Stopwatch 實測本機每幀耗時
         MeasureLocalLag();
+
+        if (Time.frameCount % 60 == 0)
+            UnityEngine.Debug.Log($"[QoS] FPS:{SmoothedFPS:F1} RTT:{SmoothedRTT:F1}ms Jitter:{JitterMs:F1}ms Loss:{PacketLossRate:P1} LocalLag:{_realLocalLagMs:F1}ms");
     }
 
     void MeasureLocalLag()

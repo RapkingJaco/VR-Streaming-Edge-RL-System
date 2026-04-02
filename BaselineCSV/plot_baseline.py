@@ -2,116 +2,88 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import os
 import glob
+import numpy as np
 
-def get_latest_baseline_file():
-    # 🌟 鎖定 Baseline 開頭的檔案
-    list_of_files = glob.glob('Baseline_*.csv') 
+def get_latest_file(pattern):
+    list_of_files = glob.glob(pattern) 
     if not list_of_files: return None
     return max(list_of_files, key=os.path.getctime)
 
-def plot_baseline_chart():
-    file_path = get_latest_baseline_file()
-    if file_path is None:
-        print("❌ 找不到 Baseline_*.csv 檔案")
+def plot_baseline_final():
+    file_path = get_latest_file('Baseline_*.csv')
+    if not file_path:
+        print("❌ 找不到 Baseline 數據檔案")
         return
 
-    print(f"📂 鎖定基準線檔案：{file_path}")
-    output_image = file_path.replace('.csv', '_Baseline_Analysis.png') 
+    output_image = file_path.replace('.csv', '_Final_Analysis.png')
+    df = pd.read_csv(file_path)
+    df.columns = df.columns.str.strip()
+    
+    # 🌟 核心證據計算：還原環境原始設備壓力
+    df['Raw_Device_Stress'] = df['CPU_Load(ms)'] / (df['LoadRatio'] + 0.001)
+    df['Raw_Device_Stress'] = df['Raw_Device_Stress'].clip(0, 120) 
 
-    try:
-        df = pd.read_csv(file_path)
+    plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'Arial'] 
+    plt.rcParams['axes.unicode_minus'] = False 
+    plt.style.use('seaborn-v0_8-paper') 
 
-        # 設定字型
-        plt.rcParams['font.sans-serif'] = ['Microsoft JhengHei', 'SimHei', 'Arial'] 
-        plt.rcParams['axes.unicode_minus'] = False 
+    fig, axes = plt.subplots(4, 1, figsize=(12, 20), sharex=True)
+    ax_mtp, ax_env, ax_perf, ax_ratio = axes
+    time = df['Elapsed(s)']
 
-        # 3 個子圖
-        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 14), sharex=True)
+    # 雙語階段標籤
+    phases = [(0, 10, "P1: 正常環境 (Normal/Heaven)", "#e9ecef"), 
+              (10, 30, "P2: 網路擁塞 (Net Hell)", "#ffc9c9"), 
+              (30, 50, "P3: 設備過熱 (Device Hell)", "#fff3bf"), 
+              (50, 60, "P4: 恢復期 (Recovery)", "#e9ecef")]
 
-        # ==========================================
-        # 第 1 層：RTT & FPS
-        # ==========================================
-        color_rtt = 'tab:orange'
-        color_fps = 'tab:blue'
-        
-        ax1.set_title(f'Rule-Based (Baseline) 效能分析\n來源: {file_path}', fontsize=16, fontweight='bold', pad=20)
-        
-        ax1.set_ylabel('RTT (ms)', color=color_rtt, fontsize=12, fontweight='bold')
-        ax1.plot(df['Elapsed(s)'], df['RTT(ms)'], color=color_rtt, label='RTT', linewidth=1.5)
-        ax1.tick_params(axis='y', labelcolor=color_rtt)
-        ax1.grid(True, linestyle='--', alpha=0.5)
-        ax1.set_ylim(0, 500)
+    # --- 1. MTP 延遲結果 (MTP Latency Result) ---
+    ax_mtp.plot(time, df['MTP(ms)'], color='#d62728', label='MTP 延遲 (MTP Latency, ms)', linewidth=2.5, zorder=5)
+    ax_mtp.axhline(y=20, color='#2ca02c', linestyle='--', linewidth=2, label='20ms 目標線 (20ms Target)')
+    ax_mtp.set_ylabel('MTP 延遲 (MTP Latency, ms)', fontsize=12, fontweight='bold')
+    ax_mtp.set_title(f'Baseline 系統效能整合分析 (System Performance Analysis)\n來源 (Source): {file_path}', fontsize=18, fontweight='bold', pad=60)
+    ax_mtp.set_ylim(0, 150)
+    ax_mtp.legend(loc='upper right')
 
-        ax1_right = ax1.twinx()
-        ax1_right.set_ylabel('FPS', color=color_fps, fontsize=12, fontweight='bold')
-        ax1_right.plot(df['Elapsed(s)'], df['FPS'], color=color_fps, label='FPS', linewidth=2)
-        ax1_right.tick_params(axis='y', labelcolor=color_fps)
-        ax1_right.set_ylim(0, 65)
-        
-        lines1, labels1 = ax1.get_legend_handles_labels()
-        lines2, labels2 = ax1_right.get_legend_handles_labels()
-        ax1.legend(lines1 + lines2, labels1 + labels2, loc='upper left')
+    # --- 2. 環境壓力層 (Environmental Stress) ---
+    ax_env.plot(time, df['RTT(ms)'], color='#ff7f0e', label='網路壓力 (Network Stress, RTT, ms)', linewidth=2.5)
+    ax_env.plot(time, df['Raw_Device_Stress'], color='#9467bd', label='設備原始壓力 (Device Stress, Raw Local Lag, ms)', linewidth=2, linestyle='--')
+    ax_env.set_ylabel('環境壓力 (Env. Stress, ms)', fontsize=12, fontweight='bold')
+    ax_env.set_ylim(0, 130)
+    ax_env.legend(loc='upper right')
 
-        # ==========================================
-        # 第 2 層：Load Ratio (基準線分配)
-        # ==========================================
-        color_ratio = 'tab:green'
-        ax2.plot(df['Elapsed(s)'], df['LoadRatio'], color=color_ratio, label='Rule Ratio', linewidth=2.5)
-        ax2.set_ylabel('Load Ratio', color=color_ratio, fontsize=12, fontweight='bold')
-        ax2.set_ylim(-0.1, 1.1)
-        ax2.grid(True, linestyle='--', alpha=0.5)
-        ax2.legend(loc='upper left')
-        
-        # ==========================================
-        # 第 3 層：Jitter & Loss
-        # ==========================================
-        color_jitter = 'tab:purple'
-        color_loss = 'tab:red'
+    # --- 3. 效能表現層 (Performance: FPS & CPU Load) ---
+    ax_perf.plot(time, df['FPS'], color='#1f77b4', label='幀率 (Frame Rate, FPS)', linewidth=2.2)
+    ax_perf.set_ylabel('幀率 (FPS)', color='#1f77b4', fontsize=12, fontweight='bold')
+    ax_perf.set_ylim(0, 120)
+    
+    ax_cpu = ax_perf.twinx()
+    ax_cpu.plot(time, df['CPU_Load(ms)'], color='#333333', label='實際本機負載 (Actual CPU Load, ms)', linewidth=1.5, linestyle=':')
+    ax_cpu.set_ylabel('實際本機負載 (Actual CPU Load, ms)', color='#333333', fontsize=12)
+    ax_cpu.set_ylim(0, 50)
+    
+    h1, l1 = ax_perf.get_legend_handles_labels()
+    h2, l2 = ax_cpu.get_legend_handles_labels()
+    ax_perf.legend(h1+h2, l1+l2, loc='upper right')
 
-        ax3.set_ylabel('Jitter (ms)', color=color_jitter, fontsize=12, fontweight='bold')
-        line3, = ax3.plot(df['Elapsed(s)'], df['Jitter(ms)'], color=color_jitter, label='Jitter (抖動)', linewidth=1.5, alpha=0.8)
-        ax3.tick_params(axis='y', labelcolor=color_jitter)
-        ax3.grid(True, linestyle='--', alpha=0.5)
-        ax3.set_ylim(0, 25) 
+    # --- 4. 決策層 (Decision: Load Ratio) ---
+    ax_ratio.plot(time, df['LoadRatio'], color='#2ca02c', label='決策: 卸載比例 (Decision: Load Ratio)', linewidth=2.5)
+    ax_ratio.set_ylabel('卸載比例 (Offloading Ratio)', fontsize=12, fontweight='bold')
+    ax_ratio.set_ylim(-0.05, 1.05)
+    ax_ratio.legend(loc='upper right')
 
-        ax3_right = ax3.twinx()
-        loss_percent = df['Loss(%)'] 
-        ax3_right.set_ylabel('Loss (%)', color=color_loss, fontsize=12, fontweight='bold')
-        line4, = ax3_right.plot(df['Elapsed(s)'], loss_percent, color=color_loss, linewidth=1.5, label='Packet Loss (%)')
-        ax3_right.tick_params(axis='y', labelcolor=color_loss)
-        
-        # 依照你的公式計算動態高度
-        max_loss_val = loss_percent.max()
-        dynamic_top = max(10, max_loss_val * 1.5) 
-        ax3_right.set_ylim(0, dynamic_top)
+    for ax in axes:
+        ax.grid(True, linestyle=':', alpha=0.3)
+        for start, end, txt, color in phases:
+            ax.axvspan(start, end, facecolor=color, alpha=0.18)
+            if ax == ax_mtp:
+                ax.text(start + (end-start)/2, 1.15, txt, transform=ax.get_xaxis_transform(),
+                        ha='center', va='bottom', fontsize=11, fontweight='bold', 
+                        bbox=dict(facecolor='white', edgecolor='#cccccc', boxstyle='round,pad=0.3'))
 
-        ax3.legend(handles=[line3, line4], loc='upper left')
-        ax3.set_xlabel('時間 (秒)', fontsize=14)
-
-        # ==========================================
-        # 加上階段線
-        # ==========================================
-        phases = [
-            (0, "P1: 起始平穩"),
-            (10, "P2: 網路風暴"),
-            (30, "P3: 本地過熱"),
-            (50, "P4: 恢復平靜")
-        ]
-        
-        for ax in [ax1, ax2, ax3]:
-            for time_point, label_text in phases:
-                if time_point > 0:
-                    ax.axvline(x=time_point, color='#555555', linestyle=':', linewidth=2, alpha=0.7)
-                if ax == ax1:
-                    ax.text(time_point + 1, 400, label_text, color='#333333', fontsize=10, fontweight='bold', backgroundcolor='#ffffffcc')
-
-        plt.tight_layout()
-        plt.savefig(output_image, dpi=300)
-        print(f"✅ 成功！基準線圖片已儲存為: {output_image}")
-        plt.show()
-
-    except Exception as e:
-        print(f"❌ 發生錯誤: {e}")
+    ax_ratio.set_xlabel('實驗經過時間 (Elapsed Time, Seconds)', fontsize=14, fontweight='bold')
+    plt.tight_layout(rect=[0, 0, 1, 0.96]) 
+    plt.savefig(output_image, dpi=300)
 
 if __name__ == "__main__":
-    plot_baseline_chart()
+    plot_baseline_final()
