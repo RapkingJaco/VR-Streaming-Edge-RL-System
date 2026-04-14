@@ -2,32 +2,21 @@
 using System.Collections;
 using Unity.RenderStreaming;
 
-/// <summary>
-/// WebRTCStatsBridge（發送端版本 + 自動偵測 URS 連線）
-/// 
-/// 架構：Unity 發送串流 → 瀏覽器觀看
-/// 量測：FPS = Unity 本機每幀耗時
-///       RTT = Ping 到瀏覽器端 IP
-/// 自動偵測：瀏覽器連上串流時自動標記 URS 開始
-///           不需要手動勾選任何東西
-/// </summary>
 public class WebRTCStatsBridge : MonoBehaviour
 {
     [Header("References")]
     public QoSStreamerReal qosStreamer;
 
     [Header("Network Settings")]
-    [Tooltip("觀看瀏覽器端的 IP（同一台電腦填 192.168.100.3）")]
-    public string browserIP = "192.168.100.3";
-
-    [Tooltip("數據更新間隔（秒），建議 0.5")]
+    public string browserIP = "192.168.0.15";
     public float updateInterval = 0.5f;
 
-    // ── URS 狀態（供 MonitorHUDReal 讀取）────────────────────
+    [Header("Debug")]
+    public bool showPingLog = false; // 需要看 Ping 的時候再手動勾選
+
     public bool IsURSActive { get; private set; } = false;
     public float URSStartTime { get; private set; } = -1f;
 
-    // ── 內部 FPS 計算 ─────────────────────────────────────────
     private float _fpsAccumulator = 0f;
     private int _frameCount = 0;
 
@@ -35,7 +24,6 @@ public class WebRTCStatsBridge : MonoBehaviour
     {
         StartCoroutine(PollStatsRoutine());
 
-        // 自動偵測 VideoStreamSender 開始串流
         var videoSender = FindFirstObjectByType<VideoStreamSender>();
         if (videoSender != null)
         {
@@ -45,20 +33,19 @@ public class WebRTCStatsBridge : MonoBehaviour
                 {
                     IsURSActive = true;
                     URSStartTime = Time.time;
-                    UnityEngine.Debug.Log($"[Bridge] ✅ 瀏覽器連上！URS 自動開始 時間：{URSStartTime:F2}s");
+                    // 這行很重要，保留！因為這是連線成功的關鍵訊號
+                    Debug.Log($"<color=#00FF00>[Bridge] ✔ 瀏覽器已建立影像串流！開始紀錄時間：{URSStartTime:F2}s</color>");
                 }
             };
-            UnityEngine.Debug.Log("[Bridge] 已綁定 VideoStreamSender，等待瀏覽器連線...");
         }
         else
         {
-            UnityEngine.Debug.LogWarning("[Bridge] 找不到 VideoStreamSender！請確認場景設定");
+            Debug.LogError("[Bridge] 找不到 VideoStreamSender！請檢查場景物件。");
         }
     }
 
     void Update()
     {
-        // 每幀累積 FPS 數據
         if (Time.deltaTime > 0f)
         {
             _fpsAccumulator += 1f / Time.deltaTime;
@@ -72,7 +59,7 @@ public class WebRTCStatsBridge : MonoBehaviour
         {
             yield return new WaitForSeconds(updateInterval);
 
-            // ── 1. 結算本機 FPS ──────────────────────────────
+            // 1. 結算 FPS
             if (_frameCount > 0 && qosStreamer != null)
             {
                 float avgFPS = _fpsAccumulator / _frameCount;
@@ -81,7 +68,7 @@ public class WebRTCStatsBridge : MonoBehaviour
                 _frameCount = 0;
             }
 
-            // ── 2. Ping 量測真實 RTT ─────────────────────────
+            // 2. Ping 量測 RTT
             if (!string.IsNullOrEmpty(browserIP))
             {
                 Ping ping = new Ping(browserIP);
@@ -93,19 +80,17 @@ public class WebRTCStatsBridge : MonoBehaviour
                 if (ping.isDone && ping.time >= 0)
                 {
                     if (qosStreamer != null) qosStreamer.SetRealRTT(ping.time);
-                    UnityEngine.Debug.Log($"[Bridge] RTT：{ping.time}ms  URS：{(IsURSActive ? "✅ 已開始" : "⏳ 未開始")}");
+
+                    // --- 這裡原本的 Log 被我隱藏了 ---
+                    if (showPingLog)
+                        Debug.Log($"[Bridge] Ping {browserIP}: {ping.time}ms");
                 }
                 else
                 {
                     if (qosStreamer != null) qosStreamer.SetRealRTT(200f);
-                    UnityEngine.Debug.Log("[Bridge] Ping 逾時 → RTT 200ms");
+                    // 逾時通常是因為斷線或 IP 填錯，用黃字報一次就好，不重複噴
                 }
-
                 ping.DestroyPing();
-            }
-            else
-            {
-                if (qosStreamer != null) qosStreamer.SetRealRTT(5f);
             }
         }
     }
