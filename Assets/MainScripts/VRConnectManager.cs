@@ -1,69 +1,67 @@
 using UnityEngine;
-using TMPro;
 
 public class VRConnectManager : MonoBehaviour
 {
-    [Header("UI 元件")]
-    public TMP_InputField pcIPInput;
-
     [Header("預設設定")]
-    // 這裡可以直接在 Inspector 改，以後連程式碼都不用開
-    public string defaultIP = "192.168.0.15";
+    public string targetIP = "192.168.0.15"; // 直接在這裡改 IP
 
     [Header("URS 物件")]
+    // 請拉入掛有 SignalingManager 的物件 (例如 Broadcast)
     public GameObject renderStreamingObject;
 
-    // --- 新增：啟動時自動載入 IP ---
     void Start()
     {
-        string savedIP = PlayerPrefs.GetString("LastSavedPCIP", defaultIP);
-        pcIPInput.text = savedIP;
-
-        // --- 懶人包：啟動後 5 秒自動執行連線 ---
-        Invoke("StartURSConnection", 5.0f);
-        Debug.Log("系統將在 5 秒後自動連線至預設 IP...");
+        // 如果是電腦端 (Unity Editor)，我們就不手動執行啟動，讓 AutomaticStreaming 去跑就好
+        // 如果是頭盔端 (Android)，我們才強制設定 IP 並啟動
+        if (Application.platform == RuntimePlatform.Android)
+        {
+            Debug.Log($"[Manager] 偵測為頭盔端，將於 3 秒後自動連線至 {targetIP}...");
+            Invoke("StartURSConnection", 3.0f);
+        }
+        else
+        {
+            Debug.Log("[Manager] 偵測為電腦端，由 AutomaticStreaming 處理連線。");
+        }
     }
 
     public void StartURSConnection()
     {
-        string pcIP = pcIPInput.text.Trim();
-        if (string.IsNullOrEmpty(pcIP)) return;
-
-        var urs = renderStreamingObject.GetComponent("RenderStreaming");
+        var urs = renderStreamingObject.GetComponent("SignalingManager");
+        if (urs == null) urs = renderStreamingObject.GetComponent("RenderStreaming");
 
         if (urs != null)
         {
             try
             {
-                var signalerField = urs.GetType().GetProperty("Signaler");
-                var signaler = signalerField.GetValue(urs);
+                // 1. 暴力反射找 Settings 欄位
+                var signalerField = urs.GetType().GetField("m_signalingSettings", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+                                 ?? urs.GetType().GetField("signalingSettings", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance);
 
-                var urlProperty = signaler.GetType().GetField("url") ?? signaler.GetType().GetField("Url");
-                if (urlProperty != null)
+                object signaler;
+                if (signalerField != null) signaler = signalerField.GetValue(urs);
+                else signaler = urs.GetType().GetProperty("Signaler").GetValue(urs);
+
+                // 2. 強制寫入 IP (ws://)
+                var urlField = signaler.GetType().GetField("url") ?? signaler.GetType().GetField("Url");
+                if (urlField != null)
                 {
-                    urlProperty.SetValue(signaler, $"http://{pcIP}");
+                    urlField.SetValue(signaler, $"ws://{targetIP}");
                 }
 
+                // 3. 執行連線
                 var runMethod = urs.GetType().GetMethod("Run");
                 runMethod.Invoke(urs, null);
 
-                Debug.Log($"[Manager] 強制連線啟動: {pcIP}");
-
-                // 連線成功後，順便存起來，下次就不用再打
-                PlayerPrefs.SetString("LastSavedPCIP", pcIP);
-                PlayerPrefs.Save(); // 強制寫入硬碟
+                Debug.Log($"<color=green>[Manager] 頭盔強制連線啟動: ws://{targetIP}</color>");
             }
             catch (System.Exception e)
             {
-                Debug.LogError($"[Manager] 反射設定失敗: {e.Message}");
+                Debug.LogError($"[Manager] 設定 IP 失敗: {e.Message}");
             }
         }
         else
         {
-            Debug.LogError("[Manager] 在物件上找不到 RenderStreaming 元件！");
+            Debug.LogError("[Manager] 找不到 URS 組件，請檢查 RenderStreamingObject 有沒有拉對！");
         }
-
-        // 連線後隱藏 UI
-        this.gameObject.SetActive(false);
     }
 }

@@ -17,80 +17,67 @@ public class StreamingAgent : Agent
     public QoSStreamer qosStreamer;
     public QoSStreamerReal qosStreamerReal;
 
-    // --- 新增變數：紀錄目前比例與上一次 Log 的比例 ---
     private float _currentRatio = 0.5f;
     private float _lastLogRatio = -1f;
+    private float _nextDiagTime = 0f; // 用於控制 Log 頻率
 
     public float LastStepReward { get; private set; }
 
-    // ... 其他獎勵變數保持原樣 ...
-    private float _prevAction = 0.2f;
-    private float _prevMTP = 0.0f;
-    private float _prevFPS = 120.0f;
     private bool IsReal => qosStreamerReal != null;
     private float CurrentRTT => IsReal ? qosStreamerReal.SmoothedRTT : (qosStreamer ? qosStreamer.SmoothedRTT : 0f);
     private float CurrentFPS => IsReal ? qosStreamerReal.SmoothedFPS : (qosStreamer ? qosStreamer.SmoothedFPS : 60f);
     private float CurrentMTP => IsReal ? qosStreamerReal.EstimatedMTP : (qosStreamer ? qosStreamer.EstimatedMTP : 20f);
 
-    // --- 新增對外接口：讓 EdgeOffloadAction 讀取 ---
-    public float GetCurrentRatio()
-    {
-        return _currentRatio;
-    }
+    public float GetCurrentRatio() => _currentRatio;
 
     public override void OnActionReceived(ActionBuffers actions)
     {
-        // 1. 取得 AI 決策並映射至 0.0 ~ 1.0
+        // 1. 取得 AI 決策
         float targetRatio = Mathf.Clamp01((actions.ContinuousActions[0] + 1.0f) * 0.5f);
-        _currentRatio = targetRatio; // 儲存起來
+        _currentRatio = targetRatio;
 
-        // 2. 更新本地負載控制器 (影響 DeviceSimulator)
+        // 2. 更新本地負載控制器
         if (loadController != null) loadController.SetLoadRatio(targetRatio);
 
-        // 3. 核心發送邏輯：透過 URS 發送到邊緣端 (PC)
+        // 3. 核心發送邏輯：只在「已連線」且「數值有明顯變動」時處理
         if (dataChannel != null && dataChannel.IsConnected)
         {
-            string jsonMsg = "{\"type\":0, \"argument\":\"" + targetRatio.ToString("F2") + "\"}";
-            dataChannel.Send(jsonMsg);
+            string msg = targetRatio.ToString("F2");
+            dataChannel.Send(msg);
 
-            // 優化 Log：只有當數值變化大於 0.05 時才紀錄，避免洗版
+            // 只有變化大於 0.05 且間隔一段時間才 Log，避免效能損失
             if (Mathf.Abs(targetRatio - _lastLogRatio) > 0.05f)
             {
-                Debug.Log($"<color=cyan>[Agent] 決策變動，數據已發送: {jsonMsg}</color>");
+                Debug.Log($"<color=cyan>[Agent] 決策變動，數據已發送: {msg}</color>");
                 _lastLogRatio = targetRatio;
             }
         }
+        else
+        {
+            // ⭐ 改良：每 5 秒才檢查一次連線狀態，絕不在每一幀噴 Log
+            if (Time.unscaledTime > _nextDiagTime)
+            {
+                if (dataChannel == null) Debug.LogError("[Agent] DataChannel 未掛載！");
+                else if (!dataChannel.IsConnected) Debug.LogWarning("[Agent] DataChannel 等待連線中...");
+                _nextDiagTime = Time.unscaledTime + 5f;
+            }
+        }
 
-        // 4. 獎勵計算 (推論模式下通常回傳為 0，但在 CSV 中會紀錄)
+        // 4. 獎勵計算
         UpdateRewards(targetRatio);
     }
 
     private void UpdateRewards(float targetRatio)
     {
-        // 1. 取得當前數據
         float fps = CurrentFPS;
         float mtp = CurrentMTP;
+        float reward = (fps / 60.0f) * 0.5f;
+        if (mtp > 50f) reward -= (mtp - 50f) * 0.01f;
 
-        // 2. 定義獎勵公式 (這部分應與你訓練時的邏輯一致)
-        // 範例：FPS 越高獎勵越高，MTP 越高扣分越多
-        float reward = 0f;
-
-        // FPS 獎勵 (目標 60fps)
-        reward += (fps / 60.0f) * 0.5f;
-
-        // MTP 懲罰 (如果 MTP 超過 50ms 就開始扣分)
-        if (mtp > 50f)
-        {
-            reward -= (mtp - 50f) * 0.01f;
-        }
-
-        // 3. 執行 ML-Agents 的獎勵功能 (這會影響 GetCumulativeReward)
         SetReward(reward);
-
-        // 4. 同步給 LastStepReward (確保 CSV 抓得到這一幀的獎勵)
         LastStepReward = reward;
     }
 
-    public override void OnEpisodeBegin() { /* ... */ }
-    public override void CollectObservations(VectorSensor sensor) { /* ... */ }
+    public override void OnEpisodeBegin() { }
+    public override void CollectObservations(VectorSensor sensor) { }
 }

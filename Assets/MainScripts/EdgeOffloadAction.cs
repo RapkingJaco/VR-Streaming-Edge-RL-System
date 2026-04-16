@@ -1,5 +1,5 @@
 ﻿using UnityEngine;
-using UnityEngine.Rendering; // 必須加這行才能控制 Volume
+using UnityEngine.Rendering;
 
 public class EdgeOffloadAction : MonoBehaviour
 {
@@ -7,9 +7,9 @@ public class EdgeOffloadAction : MonoBehaviour
     public LoadController loadController;
 
     [Header("卸載動作 - 渲染品質")]
-    public Volume postProcessVolume;      // ⭐ 這裡！掛回你的 Global Volume
-    public GameObject highPolyModels;     // 掛回那 50 個方塊
-    public ParticleSystem edgeParticles;  // 掛回粒子系統
+    public Volume postProcessVolume;
+    public GameObject highPolyModels;     // 確保這 50 個方塊是它的子物件
+    public ParticleSystem edgeParticles;
 
     private float _lastRatio = -1f;
 
@@ -17,39 +17,54 @@ public class EdgeOffloadAction : MonoBehaviour
     {
         if (loadController == null) return;
 
-        // 邊緣佔比 (1 = 全邊緣, 0 = 全本機)
-        float edgeRatio = 1.0f - loadController.LocalLoadRatio;
+        // 這裡的 LocalLoadRatio 是 AI 直接輸出的比例 (0~1)
+        float localRatio = loadController.LocalLoadRatio;
 
-        if (Mathf.Abs(edgeRatio - _lastRatio) > 0.01f)
+        if (Mathf.Abs(localRatio - _lastRatio) > 0.01f)
         {
-            ExecuteEdgeAction(edgeRatio);
-            _lastRatio = edgeRatio;
+            ExecuteEdgeAction(localRatio);
+            _lastRatio = localRatio;
         }
     }
 
-    void ExecuteEdgeAction(float ratio)
+    void ExecuteEdgeAction(float localRatio)
     {
-        // 1. 控制視覺特效強度 (0~1)
+        // 邊緣比例用於控制「華麗程度」（串流回來的特效）
+        float edgeRatio = 1.0f - localRatio;
+
+        // 1. 控制視覺特效強度 (與邊緣卸載成正比)
         if (postProcessVolume != null)
         {
-            // 當卸載到邊緣越多，畫面就越華麗
-            postProcessVolume.weight = ratio;
+            postProcessVolume.weight = edgeRatio;
         }
 
-        // 2. 控制粒子噴發量
+        // 2. 控制粒子噴發量 (與邊緣卸載成正比)
         if (edgeParticles != null)
         {
             var emission = edgeParticles.emission;
-            emission.rateOverTime = ratio * 500f;
-            if (ratio < 0.1f) edgeParticles.Clear();
+            emission.rateOverTime = edgeRatio * 500f;
+            if (edgeRatio < 0.1f) edgeParticles.Clear();
         }
 
-        // 3. 控制高模顯示
+        // 3. ⭐ 控制高模顯示 (按本地比例分配)
         if (highPolyModels != null)
         {
-            highPolyModels.SetActive(ratio > 0.7f);
-        }
+            // 必須確保父物件始終是開啟的，我們只切換子物件
+            highPolyModels.SetActive(true);
 
-        Debug.Log($"[EdgeAction] 邊緣權重: {ratio:F2}, 特效強度: {ratio:P0}");
+            int totalCubes = highPolyModels.transform.childCount;
+
+            // 計算「本地」應該顯示的數量 (例如 50 * 0.4 = 20)
+            int showCount = Mathf.RoundToInt(totalCubes * localRatio);
+
+            for (int i = 0; i < totalCubes; i++)
+            {
+                // 索引值小於 showCount 的方塊才會開啟 (代表由頭盔本地渲染)
+                // 這樣當 localRatio 越低 (卸載越多)，頭盔畫的方塊就越少
+                highPolyModels.transform.GetChild(i).gameObject.SetActive(i < showCount);
+            }
+
+            Debug.Log($"[EdgeAction] 本地比例: {localRatio:P0}, 頭盔渲染數量: {showCount}");
+        }
     }
 }

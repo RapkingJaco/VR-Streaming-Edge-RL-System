@@ -34,7 +34,7 @@ public class WebRTCStatsBridge : MonoBehaviour
                     IsURSActive = true;
                     URSStartTime = Time.time;
                     // 這行很重要，保留！因為這是連線成功的關鍵訊號
-                    Debug.Log($"<color=#00FF00>[Bridge] ✔ 瀏覽器已建立影像串流！開始紀錄時間：{URSStartTime:F2}s</color>");
+                    Debug.Log($"<color=#00FF00>[Bridge] 瀏覽器已建立影像串流！開始紀錄時間：{URSStartTime:F2}s</color>");
                 }
             };
         }
