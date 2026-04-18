@@ -64,7 +64,7 @@ public class EdgeOffloadAction : MonoBehaviour
                 highPolyModels.transform.GetChild(i).gameObject.SetActive(i < showCount);
             }
 
-            Debug.Log($"[EdgeAction] 本地比例: {localRatio:P0}, 頭盔渲染數量: {showCount}");
+            //Debug.Log($"[EdgeAction] 本地比例: {localRatio:P0}, 頭盔渲染數量: {showCount}");
         }
     }
 }
