@@ -7,10 +7,11 @@ using System.Text;
 using Unity.RenderStreaming;
 
 /// <summary>
-/// StreamingAgent V7 實機版
-/// 保留訓練版 CollectObservations（13個觀察值）
-/// 改為讀取 QoSStreamerReal 實機數據
-/// 加入 UDP 發送決策到 PC
+/// StreamingAgent V7.1 實機版（修復）
+/// 修復項目：
+///   1. RTT 重複送入 observation（Obs 1 和 Obs 12 用不同 normalize 值）
+///   2. Time.deltaTime 送入 observation（APK vs Editor 數值差 4 倍）
+///   3. LocalLag 未平滑直接送入，導致 P2 決策震盪
 /// </summary>
 public class StreamingAgent : Agent
 {
@@ -59,6 +60,10 @@ public class StreamingAgent : Agent
     private float _lastLogRatio = -1f;
     private UdpClient _udpClient;
 
+    // 修復 3：平滑用暫存值，避免 LocalLag / RTT 單幀抖動直接影響決策
+    private float _smoothedLocalLag = 0f;
+    private float _smoothedRTTObs = 0f;
+
     // 統一讀取介面
     private bool IsReal => qosStreamerReal != null;
     private float CurrentRTT => IsReal ? qosStreamerReal.SmoothedRTT : (qosStreamer ? qosStreamer.SmoothedRTT : 0f);
@@ -82,28 +87,56 @@ public class StreamingAgent : Agent
         _prevAction = 0.2f;
         _prevMTP = 0.0f;
         _prevFPS = targetFPS;
+        _smoothedLocalLag = 0f;   // 重置平滑值
+        _smoothedRTTObs = 0f;
     }
 
     public override void CollectObservations(VectorSensor sensor)
     {
-        // 13 個觀察值，對齊訓練版本
-        sensor.AddObservation(Mathf.Clamp01(CurrentRTT / 500f));
+        // 每步先更新平滑值（lerp 係數 0.25 = 約 4 步穩定，可依需要調整）
+        _smoothedLocalLag = Mathf.Lerp(_smoothedLocalLag, CurrentLocalLag, 0.25f);
+        _smoothedRTTObs = Mathf.Lerp(_smoothedRTTObs, CurrentRTT, 0.25f);
+
+        // Obs 1：RTT（normalize 到 500ms，對齊訓練版本）
+        sensor.AddObservation(Mathf.Clamp01(_smoothedRTTObs / 500f));
+
+        // Obs 2：Jitter
         sensor.AddObservation(Mathf.Clamp01(CurrentJitter / 50f));
+
+        // Obs 3：PacketLoss
         sensor.AddObservation(CurrentLoss);
-        sensor.AddObservation(Mathf.Clamp01(CurrentFPS / 120f));
+
+        // Obs 4：FPS（用 targetFPS normalize，Inspector 設為 40 對齊 APK 實測上限）
+        sensor.AddObservation(Mathf.Clamp01(CurrentFPS / targetFPS));
+
+        // Obs 5：MTP
         sensor.AddObservation(Mathf.Clamp01(CurrentMTP / 150f));
+
+        // Obs 6：目前的 LocalLoadRatio
         sensor.AddObservation(loadController != null ? loadController.LocalLoadRatio : 0.2f);
+
+        // Obs 7：上一步的 action
         sensor.AddObservation(_prevAction);
-        sensor.AddObservation(Time.deltaTime);
+
+        // Obs 8：修復 2 — 原為 Time.deltaTime（APK vs Editor 差 4 倍），改為固定 0
+        //         訓練時此位置數值接近 0，填 0 不引入新的分布外輸入
+        sensor.AddObservation(0f);
+
+        // Obs 9：serverCongestionIndex
         sensor.AddObservation(serverCongestionIndex);
 
-        // MTP 和 FPS 的變化量
+        // Obs 10：MTP 變化量
         sensor.AddObservation(Mathf.Clamp((CurrentMTP - _prevMTP) / 100f, -1f, 1f));
+
+        // Obs 11：FPS 變化量
         sensor.AddObservation(Mathf.Clamp((CurrentFPS - _prevFPS) / 60f, -1f, 1f));
 
-        // 實機用 RealLocalLag 取代模擬版的 baseRtt 和 deviceHeat
-        sensor.AddObservation(Mathf.Clamp01(CurrentRTT / 200f));
-        sensor.AddObservation(Mathf.Clamp01(CurrentLocalLag / 150f));
+        // Obs 12：修復 1 — 原為 CurrentRTT / 200f（與 Obs 1 重複且 normalize 不同）
+        //         訓練時此位置是靜態 baseRtt ≈ 0，填 0 保持 index 對齊
+        sensor.AddObservation(0f);
+
+        // Obs 13：LocalLag（平滑後，normalize 到 150ms）
+        sensor.AddObservation(Mathf.Clamp01(_smoothedLocalLag / 150f));
 
         _prevMTP = CurrentMTP;
         _prevFPS = CurrentFPS;
@@ -170,7 +203,6 @@ public class StreamingAgent : Agent
         LastStepReward = totalReward;
         _prevAction = targetRatio;
     }
-
 
     private void OnDestroy()
     {

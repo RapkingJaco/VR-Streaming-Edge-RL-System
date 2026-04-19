@@ -1,13 +1,16 @@
 ﻿using UnityEngine;
+using System.Net.Sockets;
+using System.Text;
 
 /// <summary>
 /// RuleBasedController v3
 /// 支援實機（QoSStreamerReal）和模擬（QoSStreamer）兩種模式
+/// 加入 UDP 發送決策到 PC
 /// </summary>
 public class RuleBasedController : MonoBehaviour
 {
     [Header("模式切換")]
-    public bool useRealMode = true; // true = 實機模式，false = 模擬模式
+    public bool useRealMode = true;
 
     [Header("References（實機模式）")]
     public QoSStreamerReal qosReal;
@@ -16,6 +19,10 @@ public class RuleBasedController : MonoBehaviour
     public QoSStreamer qosSim;
     public LoadController load;
     public DeviceSimulator deviceSim;
+
+    [Header("UDP 設定")]
+    public string pcIP = "192.168.0.15";
+    public int pcPort = 9998;
 
     [Header("Thresholds")]
     public float rttGood = 10f;
@@ -32,6 +39,8 @@ public class RuleBasedController : MonoBehaviour
 
     private float _currentRatio = 0.2f;
     private float _lastApplyTime;
+    private float _lastSentRatio = -1f;
+    private UdpClient _udpClient;
 
     // 統一讀取介面
     private float RTT => useRealMode
@@ -53,6 +62,10 @@ public class RuleBasedController : MonoBehaviour
     void Start()
     {
         if (load != null) load.SetLoadRatio(_currentRatio);
+
+        // 初始化 UDP
+        _udpClient = new UdpClient();
+        Debug.Log($"[RuleBased] UDP 初始化完成，目標 {pcIP}:{pcPort}");
     }
 
     void Update()
@@ -96,5 +109,27 @@ public class RuleBasedController : MonoBehaviour
 
         load.SetLoadRatio(_currentRatio);
         _lastApplyTime = Time.time;
+
+        // 7. UDP 發送決策到 PC
+        if (_udpClient != null && Mathf.Abs(_currentRatio - _lastSentRatio) > 0.01f)
+        {
+            try
+            {
+                string msg = _currentRatio.ToString("F2");
+                byte[] bytes = Encoding.UTF8.GetBytes(msg);
+                _udpClient.Send(bytes, bytes.Length, pcIP, pcPort);
+                _lastSentRatio = _currentRatio;
+                Debug.Log($"<color=orange>[RuleBased] 決策已發送(UDP): {msg}</color>");
+            }
+            catch (System.Exception e)
+            {
+                Debug.LogError($"[RuleBased] UDP 發送失敗: {e.Message}");
+            }
+        }
+    }
+
+    void OnDestroy()
+    {
+        _udpClient?.Close();
     }
 }
