@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>PPO-LSTM Architecture (13-10-10)</title>
+    <style>
+        body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #ffffff; }
+        canvas { border: 1px solid #eee; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+    <canvas id="nnCanvas" width="1050" height="620"></canvas>
+    
+    <script>
+        // 初始化畫布
+        const ctx = document.getElementById('nnCanvas').getContext('2d');
+        ctx.textAlign = 'center';
+
+        // 節點參數設定 (13-10-10)
+        const layers = [
+            { x: 150, count: 13, color: '#cce5ff', stroke: '#005cbf' },
+            { x: 350, count: 10, color: '#ffe5cc', stroke: '#bf5c00' },
+            { x: 550, count: 10, color: '#ffe5cc', stroke: '#bf5c00' }
+        ];
+
+        // 繪製 Dense Layer 之間連線
+        ctx.strokeStyle = 'rgba(150, 150, 150, 0.5)';
+        ctx.lineWidth = 1;
+        for (let i = 0; i < layers.length - 1; i++) {
+            const l1 = layers[i], l2 = layers[i+1];
+            for (let n1 = 0; n1 < l1.count; n1++) {
+                const y1 = 120 + n1 * (360 / Math.max(1, l1.count - 1));
+                for (let n2 = 0; n2 < l2.count; n2++) {
+                    const y2 = 120 + n2 * (360 / Math.max(1, l2.count - 1));
+                    ctx.beginPath();
+                    ctx.moveTo(l1.x, y1);
+                    ctx.lineTo(l2.x, y2);
+                    ctx.stroke();
+                }
+            }
+        }
+
+        // 繪製 FC 2 到 LSTM 連線
+        const lstmX = 750, lstmY = 300;
+        for (let n = 0; n < layers[2].count; n++) {
+            const y = 120 + n * (360 / 9);
+            ctx.beginPath();
+            ctx.moveTo(layers[2].x, y);
+            ctx.lineTo(lstmX - 70, lstmY);
+            ctx.stroke();
+        }
+
+        // 繪製 LSTM 到 Output 連線
+        ctx.beginPath();
+        ctx.moveTo(lstmX + 70, lstmY);
+        ctx.lineTo(920, lstmY);
+        ctx.stroke();
+
+        // 繪製各層圓形節點
+        layers.forEach(layer => {
+            for (let i = 0; i < layer.count; i++) {
+                const y = 120 + i * (360 / Math.max(1, layer.count - 1));
+                ctx.beginPath();
+                ctx.arc(layer.x, y, 12, 0, Math.PI * 2);
+                ctx.fillStyle = layer.color;
+                ctx.fill();
+                ctx.strokeStyle = layer.stroke;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            }
+        });
+
+        // 繪製 LSTM 區塊
+        ctx.fillStyle = '#f3e6ff';
+        ctx.strokeStyle = '#6600cc';
+        ctx.beginPath();
+        ctx.roundRect(lstmX - 70, lstmY - 50, 140, 100, 8);
+        ctx.fill();
+        ctx.stroke();
+
+        // 繪製 Output 節點
+        ctx.beginPath();
+        ctx.arc(920, lstmY, 20, 0, Math.PI * 2);
+        ctx.fillStyle = '#d4edda';
+        ctx.strokeStyle = '#28a745';
+        ctx.fill();
+        ctx.stroke();
+
+        // 繪製文字與標籤函式
+        ctx.fillStyle = '#000';
+        const drawText = (text, x, y, font = '16px "Microsoft JhengHei", Arial', bold = false) => { 
+            ctx.font = (bold ? 'bold ' : '') + font;
+            ctx.fillText(text, x, y); 
+        };
+
+        // ===== 頂部文字標籤(層名 + 規格,各層僅一次)=====
+        drawText('Observation', 150, 50, '20px "Microsoft JhengHei", Arial', true);
+        drawText('13 維', 150, 80);
+        
+        drawText('FC 1', 350, 50, '20px "Microsoft JhengHei", Arial', true);
+        drawText('256 神經元 + Swish', 350, 80);
+        
+        drawText('FC 2', 550, 50, '20px "Microsoft JhengHei", Arial', true);
+        drawText('256 神經元 + Swish', 550, 80);
+        
+        drawText('LSTM', lstmX, 40, '20px "Microsoft JhengHei", Arial', true);
+        drawText('memory 128,', lstmX, 65);
+        drawText('sequence 32', lstmX, 90);
+        
+        drawText('Output', 920, 50, '20px "Microsoft JhengHei", Arial', true);
+        drawText('Tanh → LocalRatio', 920, 80);
+
+        // ===== 底部僅保留一行 Observation 五類說明 =====
+        ctx.fillStyle = '#666';
+        drawText('網路 (4) · 設備 (3) · 決策 (2) · 保留 (2) · 變化 (2)', 525, 560, 'italic 14px "Microsoft JhengHei", Arial');
+
+        // 恢復黑色供 LSTM 內部文字用
+        ctx.fillStyle = '#000';
+
+        // LSTM 內部文字與 icon
+        drawText('LSTM', lstmX, lstmY + 5, '22px "Microsoft JhengHei", Arial', true);
+        drawText('↻', lstmX, lstmY + 35, '24px Arial');
+
+    </script>
+</body>
+</html>

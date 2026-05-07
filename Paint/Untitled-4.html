@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>Reward 權重分配</title>
+    <style>
+        body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #ffffff; }
+        canvas { border: 1px solid #eee; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+    <canvas id="chart" width="900" height="520"></canvas>
+
+    <script>
+        const ctx = document.getElementById('chart').getContext('2d');
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+
+        // ===== 資料設定 =====
+        const data = [
+            { label: "r_MTP",     weight: 0.40, color: "#2E75B6", name: "MTP 獎勵",      desc: "低於 35 ms 門檻" },
+            { label: "r_FPS",     weight: 0.30, color: "#ED7D31", name: "FPS 獎勵",      desc: "維持畫面更新率" },
+            { label: "r_Balance", weight: 0.20, color: "#8957A5", name: "Balance 獎勵",  desc: "LocalRatio 平衡" },
+            { label: "r_Smooth",  weight: 0.10, color: "#548F50", name: "Smooth 獎勵",   desc: "決策輸出平滑" },
+        ];
+
+        // ===== 下標繪製輔助函式 =====
+        function drawVarWithSubscript(label, weight, x, y) {
+            const parts = label.split("_");
+            const baseLetter = parts[0];
+            const subText = parts[1] || "";
+
+            ctx.textAlign = "left";
+            ctx.textBaseline = "middle";
+            ctx.fillStyle = "#666";
+
+            // 基底字母(斜體,大小 15)
+            ctx.font = 'italic 15px "Microsoft JhengHei", Arial';
+            ctx.fillText(baseLetter, x, y);
+            const baseWidth = ctx.measureText(baseLetter).width;
+
+            // 下標(斜體,大小 11,Y 往下 4px)
+            ctx.font = 'italic 11px "Microsoft JhengHei", Arial';
+            ctx.fillText(subText, x + baseWidth + 1, y + 4);
+            const subWidth = ctx.measureText(subText).width;
+
+            // 後面的「  (w = 0.40)」
+            ctx.font = '14px "Microsoft JhengHei", Arial';
+            const tail = "  (w = " + weight.toFixed(2) + ")";
+            ctx.fillText(tail, x + baseWidth + subWidth + 4, y);
+        }
+
+        // ===== 畫圓餅 =====
+        const cx = 280, cy = 260, radius = 170;
+        let startAngle = -Math.PI / 2;
+
+        data.forEach(item => {
+            const sliceAngle = item.weight * 2 * Math.PI;
+            const endAngle = startAngle + sliceAngle;
+
+            ctx.beginPath();
+            ctx.moveTo(cx, cy);
+            ctx.arc(cx, cy, radius, startAngle, endAngle);
+            ctx.closePath();
+            ctx.fillStyle = item.color;
+            ctx.fill();
+            ctx.strokeStyle = "#ffffff";
+            ctx.lineWidth = 3;
+            ctx.stroke();
+
+            const midAngle = startAngle + sliceAngle / 2;
+            const textX = cx + Math.cos(midAngle) * radius * 0.6;
+            const textY = cy + Math.sin(midAngle) * radius * 0.6;
+            ctx.fillStyle = "#ffffff";
+            ctx.font = 'bold 22px "Microsoft JhengHei", Arial';
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText((item.weight * 100) + "%", textX, textY);
+
+            startAngle = endAngle;
+        });
+
+
+        // ===== 右側圖例 =====
+        const legendX = 560;
+        let legendY = 130;
+        data.forEach(item => {
+            // 色塊
+            ctx.fillStyle = item.color;
+            ctx.fillRect(legendX, legendY - 10, 22, 22);
+            ctx.strokeStyle = "#fff";
+            ctx.lineWidth = 1;
+            ctx.strokeRect(legendX, legendY - 10, 22, 22);
+
+            // 名稱
+            ctx.fillStyle = "#333";
+            ctx.textAlign = "left";
+            ctx.textBaseline = "middle";
+            ctx.font = 'bold 16px "Microsoft JhengHei", Arial';
+            ctx.fillText(item.name, legendX + 34, legendY - 2);
+
+            // 變數 + 權重(下標版)
+            drawVarWithSubscript(item.label, item.weight, legendX + 34, legendY + 18);
+
+            // 說明
+            ctx.fillStyle = "#888";
+            ctx.font = 'italic 13px "Microsoft JhengHei", Arial';
+            ctx.textAlign = "left";
+            ctx.fillText(item.desc, legendX + 34, legendY + 38);
+
+            legendY += 70;
+        });
+
+        // ===== 底部補充說明(r_Penalty 帶下標)=====
+        (function drawPenaltyNote() {
+            const y = 480;
+            let x = 120;  // 起始 X(會依實際寬度置中)
+
+            // 先測量整段總寬度以便置中
+            ctx.textAlign = "left";
+            ctx.textBaseline = "middle";
+
+            // 預先計算寬度的輔助:用同樣字型測量
+            ctx.font = 'italic 13px "Microsoft JhengHei", Arial';
+            const prefix = "註:";
+            const tail = "(LocalRatio 落於 [0.10, 0.95] 外之懲罰項)為附加修正,不計入上述加權。";
+
+            const prefixWidth = ctx.measureText(prefix).width;
+            // 基底「r」(斜體 13)
+            ctx.font = 'italic 13px "Microsoft JhengHei", Arial';
+            const rWidth = ctx.measureText("r").width;
+            // 下標「Penalty」(斜體 9)
+            ctx.font = 'italic 9px "Microsoft JhengHei", Arial';
+            const subWidth = ctx.measureText("Penalty").width;
+            // 尾段
+            ctx.font = 'italic 13px "Microsoft JhengHei", Arial';
+            const tailWidth = ctx.measureText(tail).width;
+
+            const totalWidth = prefixWidth + rWidth + 1 + subWidth + tailWidth;
+            x = 450 - totalWidth / 2;  // 整段置中於 x=450
+
+            ctx.fillStyle = "#888";
+
+            // 畫「註:」
+            ctx.font = 'italic 13px "Microsoft JhengHei", Arial';
+            ctx.fillText(prefix, x, y);
+            x += prefixWidth;
+
+            // 畫「r」
+            ctx.fillText("r", x, y);
+            x += rWidth + 1;
+
+            // 畫下標「Penalty」(往下偏 3px)
+            ctx.font = 'italic 9px "Microsoft JhengHei", Arial';
+            ctx.fillText("Penalty", x, y + 3);
+            x += subWidth;
+
+            // 畫尾段
+            ctx.font = 'italic 13px "Microsoft JhengHei", Arial';
+            ctx.fillText(tail, x, y);
+        })();
+
+
+    </script>
+</body>
+</html>

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>MDP 循環示意圖</title>
+    <style>
+        body { display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; background-color: #ffffff; }
+        canvas { border: 1px solid #eee; box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+    </style>
+</head>
+<body>
+    <canvas id="chart" width="900" height="540"></canvas>
+
+    <script>
+        const ctx = document.getElementById('chart').getContext('2d');
+
+        // ===== 顏色配置 =====
+        const C_AGENT_FILL = "#E8F1F9";
+        const C_AGENT_BD = "#2E75B6";
+        const C_ENV_FILL = "#F0F0F0";  // 淺灰底
+        const C_ENV_BD = "#777777";    // 中灰邊框
+        const C_ARROW = "#666666";
+        const C_TEXT_MAIN = "#333333";
+        const C_TEXT_SUB = "#666666";
+        const C_LABEL_FILL = "#F5F5F5";
+
+        // ===== 兩個主要方塊位置 =====
+        const agentX = 450, agentY = 130;
+        const envX = 450, envY = 410;
+        const boxW = 260, boxH = 90;
+
+        // ===== 畫方塊函式 =====
+        function drawBox(cx, cy, title, subtitle, fill, stroke) {
+            const x = cx - boxW / 2;
+            const y = cy - boxH / 2;
+            ctx.fillStyle = fill;
+            ctx.strokeStyle = stroke;
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            if (ctx.roundRect) {
+                ctx.roundRect(x, y, boxW, boxH, 12);
+            } else {
+                ctx.rect(x, y, boxW, boxH);
+            }
+            ctx.fill();
+            ctx.stroke();
+
+            // 標題
+            ctx.fillStyle = C_TEXT_MAIN;
+            ctx.font = 'bold 20px "Microsoft JhengHei", Arial';
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(title, cx, cy - 13);
+
+            // 副標
+            ctx.fillStyle = C_TEXT_SUB;
+            ctx.font = '14px "Microsoft JhengHei", Arial';
+            ctx.fillText(subtitle, cx, cy + 14);
+        }
+
+        drawBox(agentX, agentY, "AI 代理人 (Agent)", "PPO + LSTM 策略網路",
+                C_AGENT_FILL, C_AGENT_BD);
+        drawBox(envX, envY, "環境 (Environment)", "VR 邊緣串流系統",
+                C_ENV_FILL, C_ENV_BD);
+
+        // ===== 畫彎曲箭頭 =====
+        // 右邊:Agent → Environment(Action 下行)
+        function drawCurveArrow(x1, y1, x2, y2, cpx, cpy) {
+            ctx.strokeStyle = C_ARROW;
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.quadraticCurveTo(cpx, cpy, x2, y2);
+            ctx.stroke();
+
+            // 計算箭頭方向(切線近似)
+            const dx = x2 - cpx;
+            const dy = y2 - cpy;
+            const len = Math.sqrt(dx * dx + dy * dy);
+            const ux = dx / len, uy = dy / len;
+            const size = 10;
+
+            // 箭頭兩翼
+            const leftX = x2 - ux * size - (-uy) * size * 0.6;
+            const leftY = y2 - uy * size - (ux) * size * 0.6;
+            const rightX = x2 - ux * size - (uy) * size * 0.6;
+            const rightY = y2 - uy * size - (-ux) * size * 0.6;
+
+            ctx.fillStyle = C_ARROW;
+            ctx.beginPath();
+            ctx.moveTo(x2, y2);
+            ctx.lineTo(leftX, leftY);
+            ctx.lineTo(rightX, rightY);
+            ctx.closePath();
+            ctx.fill();
+        }
+
+        // 右側:Agent → Environment(下行)
+        drawCurveArrow(
+            agentX + boxW / 2 - 20, agentY + boxH / 2,   // 起點:Agent 右下
+            envX + boxW / 2 - 20, envY - boxH / 2,       // 終點:Env 右上
+            750, 270                                      // 控制點:右側外
+        );
+
+        // 左側:Environment → Agent(上行)
+        drawCurveArrow(
+            envX - boxW / 2 + 20, envY - boxH / 2,       // 起點:Env 左上
+            agentX - boxW / 2 + 20, agentY + boxH / 2,   // 終點:Agent 左下
+            150, 270                                      // 控制點:左側外
+        );
+
+        // ===== 箭頭標籤 =====
+        function drawArrowLabel(x, y, mainText, subText) {
+            // 白底圓角方塊
+            ctx.font = 'bold 16px "Microsoft JhengHei", Arial';
+            const mainWidth = ctx.measureText(mainText).width;
+            ctx.font = '13px "Microsoft JhengHei", Arial';
+            const subWidth = ctx.measureText(subText).width;
+            const w = Math.max(mainWidth, subWidth) + 24;
+            const h = 54;
+
+            ctx.fillStyle = "#FFFFFF";
+            ctx.strokeStyle = "#CCCCCC";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            if (ctx.roundRect) {
+                ctx.roundRect(x - w / 2, y - h / 2, w, h, 8);
+            } else {
+                ctx.rect(x - w / 2, y - h / 2, w, h);
+            }
+            ctx.fill();
+            ctx.stroke();
+
+            // 主文字
+            ctx.fillStyle = C_TEXT_MAIN;
+            ctx.font = 'bold 16px "Microsoft JhengHei", Arial';
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(mainText, x, y - 10);
+
+            // 副文字
+            ctx.fillStyle = C_TEXT_SUB;
+            ctx.font = 'italic 13px "Microsoft JhengHei", Arial';
+            ctx.fillText(subText, x, y + 10);
+        }
+
+        // 右側標籤:Action
+        drawArrowLabel(790, 270, "Action", "LocalRatio ∈ [0, 1]");
+
+        // 左側標籤:State + Reward
+        drawArrowLabel(110, 270, "State / Reward", "13 維 Obs + 加權獎勵");
+
+
+    </script>
+</body>
+</html>
