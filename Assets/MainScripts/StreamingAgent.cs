@@ -98,10 +98,10 @@ public class StreamingAgent : Agent
         _smoothedRTTObs = Mathf.Lerp(_smoothedRTTObs, CurrentRTT, 0.25f);
 
         // Obs 1：RTT（normalize 到 500ms，對齊訓練版本）
-        sensor.AddObservation(Mathf.Clamp01(_smoothedRTTObs / 500f));
+        sensor.AddObservation(Mathf.Clamp01(_smoothedRTTObs / 95f));   // ★校準: 500→95 (依實機 95% 分位數 76ms × 1.25 安全餘裕)
 
         // Obs 2：Jitter
-        sensor.AddObservation(Mathf.Clamp01(CurrentJitter / 50f));
+        sensor.AddObservation(Mathf.Clamp01(CurrentJitter / 1.5f));    // ★校準: 50→1.5 (實機 Jitter 95% = 1.05ms,原本 50 太大 47 倍)
 
         // Obs 3：PacketLoss
         sensor.AddObservation(CurrentLoss);
@@ -110,7 +110,7 @@ public class StreamingAgent : Agent
         sensor.AddObservation(Mathf.Clamp01(CurrentFPS / targetFPS));
 
         // Obs 5：MTP
-        sensor.AddObservation(Mathf.Clamp01(CurrentMTP / 150f));
+        sensor.AddObservation(Mathf.Clamp01(CurrentMTP / 80f));        // ★校準: 150→80 (實機 MTP 95% = 62.6ms × 1.3 安全餘裕)
 
         // Obs 6：目前的 LocalLoadRatio
         sensor.AddObservation(loadController != null ? loadController.LocalLoadRatio : 0.2f);
@@ -136,7 +136,7 @@ public class StreamingAgent : Agent
         sensor.AddObservation(0f);
 
         // Obs 13：LocalLag（平滑後，normalize 到 150ms）
-        sensor.AddObservation(Mathf.Clamp01(_smoothedLocalLag / 150f));
+        sensor.AddObservation(Mathf.Clamp01(_smoothedLocalLag / 70f)); // ★校準: 150→70 (實機 LocalLag 95% = 55.27ms × 1.27)
 
         _prevMTP = CurrentMTP;
         _prevFPS = CurrentFPS;
